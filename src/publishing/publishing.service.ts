@@ -35,19 +35,32 @@ export class PublishingService {
       );
 
     let featuredMedia: number | undefined;
+    let featuredImageError: string | undefined;
     if (article.featuredImageUrl) {
-      try {
-        const uploaded = await this.media.uploadFromUrl(userId, {
-          siteId: article.siteId,
-          sourceUrl: article.featuredImageUrl,
-        });
-        if (uploaded.data.wpMediaId) {
-          featuredMedia = uploaded.data.wpMediaId;
+      const imageUrl = article.featuredImageUrl.trim();
+      if (!/^https?:\/\//i.test(imageUrl)) {
+        featuredImageError = `Featured image must be a full http(s) URL, got: ${imageUrl}`;
+        this.logger.warn(featuredImageError);
+      } else {
+        try {
+          const uploaded = await this.media.uploadFromUrl(userId, {
+            siteId: article.siteId,
+            sourceUrl: imageUrl,
+          });
+          if (uploaded.data.wpMediaId) {
+            featuredMedia = uploaded.data.wpMediaId;
+          } else {
+            featuredImageError = 'Image uploaded but WordPress returned no media ID';
+          }
+        } catch (err) {
+          featuredImageError =
+            err?.response?.message ||
+            err?.message ||
+            'Featured image upload failed';
+          this.logger.warn(
+            `Featured image upload failed for ${articleId}: ${featuredImageError}`,
+          );
         }
-      } catch (err) {
-        this.logger.warn(
-          `Featured image upload failed for ${articleId}: ${err.message}`,
-        );
       }
     }
 
@@ -55,7 +68,24 @@ export class PublishingService {
       seoTitle: article.seoTitle,
       seoDescription: article.seoDescription,
       focusKeyword: article.focusKeyword,
+      lsiKeywords: article.lsiKeywords,
+      plugin: 'both',
     });
+
+    if (
+      !article.seoTitle &&
+      !article.seoDescription &&
+      !article.focusKeyword &&
+      !article.lsiKeywords
+    ) {
+      this.logger.warn(
+        `Article ${articleId} has no SEO fields set in SheetPress — Rank Math will stay empty`,
+      );
+    } else {
+      this.logger.log(
+        `SEO payload for ${articleId}: title=${!!article.seoTitle}, desc=${!!article.seoDescription}, kw=${!!article.focusKeyword}, lsi=${!!article.lsiKeywords}`,
+      );
+    }
 
     return {
       title: article.title,
@@ -67,6 +97,7 @@ export class PublishingService {
       featured_media: featuredMedia,
       meta,
       article,
+      featuredImageError,
     };
   }
 
@@ -90,17 +121,29 @@ export class PublishingService {
       userId,
     );
 
+    const seoWarning = (result as any)?.data?.seoWarning as
+      | string
+      | undefined;
+    const warning =
+      [payload.featuredImageError, seoWarning].filter(Boolean).join(' | ') ||
+      undefined;
+
     const updated = await this.prisma.article.update({
       where: { id: articleId },
       data: {
         wpPostId: Number(result!.data.id),
         wpUrl: result!.data.link,
         status: ArticleStatus.DRAFT,
-        errorMessage: null,
+        errorMessage: warning || null,
       },
     });
 
-    return { data: updated, wp: result!.data };
+    return {
+      data: updated,
+      wp: result!.data,
+      warning,
+      seoWarning,
+    };
   }
 
   async publish(userId: string, articleId: string, asDraft = false) {
@@ -149,13 +192,20 @@ export class PublishingService {
       );
     }
 
+    const seoWarning = (result as any)?.data?.seoWarning as
+      | string
+      | undefined;
+    const warning =
+      [payload.featuredImageError, seoWarning].filter(Boolean).join(' | ') ||
+      undefined;
+
     const updated = await this.prisma.article.update({
       where: { id: articleId },
       data: {
         wpPostId: Number(result!.data.id),
         wpUrl: result!.data.link,
         status: ArticleStatus.PUBLISHED,
-        errorMessage: null,
+        errorMessage: warning || null,
       },
     });
 
@@ -174,12 +224,24 @@ export class PublishingService {
         userId,
         type: NotificationType.PUBLISH_COMPLETED,
         title: 'Article published',
-        message: `"${article.title}" was published successfully`,
-        meta: { articleId, wpUrl: result!.data.link } as object,
+        message: warning
+          ? `"${article.title}" published with warning: ${warning}`
+          : `"${article.title}" was published successfully`,
+        meta: {
+          articleId,
+          wpUrl: result!.data.link,
+          featuredImageError: payload.featuredImageError || null,
+          seoWarning: seoWarning || null,
+        } as object,
       },
     });
 
-    return { data: updated, wp: result!.data };
+    return {
+      data: updated,
+      wp: result!.data,
+      warning,
+      seoWarning,
+    };
   }
 
   async schedule(
@@ -251,15 +313,27 @@ export class PublishingService {
       userId,
     );
 
+    const seoWarning = (result as any)?.data?.seoWarning as
+      | string
+      | undefined;
+    const warning =
+      [payload.featuredImageError, seoWarning].filter(Boolean).join(' | ') ||
+      undefined;
+
     const updated = await this.prisma.article.update({
       where: { id: articleId },
       data: {
         wpUrl: result!.data.link,
-        errorMessage: null,
+        errorMessage: warning || null,
       },
     });
 
-    return { data: updated, wp: result!.data };
+    return {
+      data: updated,
+      wp: result!.data,
+      warning,
+      seoWarning,
+    };
   }
 
   private assertNotAlreadyPublished(article: {

@@ -43,6 +43,8 @@ const DEFAULT_MAPPING: Record<string, string[]> = {
   seoDescription: [
     'seoDescription',
     'seo_description',
+    'SEO Description',
+    'seo description',
     'Meta Description',
     'meta_description',
     'meta description',
@@ -51,7 +53,20 @@ const DEFAULT_MAPPING: Record<string, string[]> = {
     'focusKeyword',
     'focus_keyword',
     'Focus Keyword',
+    'Focus Keywords',
+    'focus keywords',
     'keyword',
+  ],
+  lsiKeywords: [
+    'lsiKeywords',
+    'lsi_keywords',
+    'LSI Keywords',
+    'LSI Keyword',
+    'lsi keywords',
+    'lsi',
+    'LSI',
+    'secondary keywords',
+    'Secondary Keywords',
   ],
   publishAt: [
     'publishAt',
@@ -166,6 +181,7 @@ export class ImportsService {
             seoTitle: a.seoTitle || null,
             seoDescription: a.seoDescription || null,
             focusKeyword: a.focusKeyword || null,
+            lsiKeywords: a.lsiKeywords || null,
             publishAt: a.publishAt || null,
           })),
         });
@@ -388,6 +404,7 @@ export class ImportsService {
       seoTitle?: string;
       seoDescription?: string;
       focusKeyword?: string;
+      lsiKeywords?: string;
       publishAt?: Date;
       status?: ArticleStatus;
     }> = [];
@@ -439,6 +456,7 @@ export class ImportsService {
         seoTitle: get('seoTitle') || undefined,
         seoDescription: get('seoDescription') || undefined,
         focusKeyword: get('focusKeyword') || undefined,
+        lsiKeywords: get('lsiKeywords') || undefined,
         publishAt,
         status,
       });

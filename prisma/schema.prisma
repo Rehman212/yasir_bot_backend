@@ -209,6 +209,7 @@ model Article {
   seoTitle         String?
   seoDescription   String?
   focusKeyword     String?
+  lsiKeywords      String?
   wpPostId         Int?
   wpUrl            String?
   publishAt        DateTime?

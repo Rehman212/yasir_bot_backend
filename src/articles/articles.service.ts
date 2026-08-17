@@ -36,6 +36,7 @@ export class ArticlesService {
         seoTitle: dto.seoTitle,
         seoDescription: dto.seoDescription,
         focusKeyword: dto.focusKeyword,
+        lsiKeywords: dto.lsiKeywords,
         publishAt: dto.publishAt ? new Date(dto.publishAt) : null,
         duplicateOfId: duplicate?.id || null,
       },
@@ -113,6 +114,9 @@ export class ArticlesService {
         }),
         ...(dto.focusKeyword !== undefined && {
           focusKeyword: dto.focusKeyword,
+        }),
+        ...(dto.lsiKeywords !== undefined && {
+          lsiKeywords: dto.lsiKeywords,
         }),
         ...(dto.publishAt !== undefined && {
           publishAt: dto.publishAt ? new Date(dto.publishAt) : null,

@@ -25,6 +25,11 @@ export class UpdateSeoDto {
   focusKeyword?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  lsiKeywords?: string;
+
+  @IsOptional()
   @IsIn(['yoast', 'rankmath', 'both'])
   plugin?: 'yoast' | 'rankmath' | 'both';
 }

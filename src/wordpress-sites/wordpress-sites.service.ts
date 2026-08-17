@@ -56,6 +56,7 @@ export class WordPressSitesService {
       });
       return {
         data: this.sanitize(updated),
+        connected: true,
       };
     } catch (err) {
       this.logger.warn(`Site created but connection failed: ${err.message}`);
@@ -73,7 +74,11 @@ export class WordPressSitesService {
           },
         },
       });
-      return { data: this.sanitize(site) };
+      return {
+        data: this.sanitize(site),
+        warning: err.message as string,
+        connected: false,
+      };
     }
   }
 
@@ -178,7 +183,7 @@ export class WordPressSitesService {
     });
     if (res.status === 401 || res.status === 403) {
       throw new Error(
-        'Invalid credentials for the WordPress REST API. Use your WP username plus an Application Password (Users → Profile → Application Passwords)—not your normal login password.',
+        'Invalid credentials. Username must be your WordPress login username (e.g. Admin)—NOT the Application Password name. Password must be a newly generated Application Password (Users → Profile → Application Passwords), not your normal login password.',
       );
     }
     if (res.status >= 400) {

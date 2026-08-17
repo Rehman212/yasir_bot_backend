@@ -6,9 +6,15 @@ import {
   Delete,
   Body,
   Param,
+  Res,
   UseGuards,
   ParseIntPipe,
+  StreamableFile,
+  NotFoundException,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { createReadStream, existsSync } from 'fs';
+import { join } from 'path';
 import { WordPressIntegrationService } from './wordpress-integration.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -22,6 +28,40 @@ import {
 @UseGuards(JwtAuthGuard)
 export class WordPressIntegrationController {
   constructor(private readonly wp: WordPressIntegrationService) {}
+
+  @Get('seo-bridge/download')
+  downloadSeoBridge(@Res({ passthrough: true }) res: Response) {
+    const candidates = [
+      join(process.cwd(), 'wordpress-plugin', 'sheetpress-seo-bridge.zip'),
+      join(
+        __dirname,
+        '..',
+        '..',
+        'wordpress-plugin',
+        'sheetpress-seo-bridge.zip',
+      ),
+    ];
+    const filePath = candidates.find((p) => existsSync(p));
+    if (!filePath) {
+      throw new NotFoundException(
+        'sheetpress-seo-bridge.zip not found on server',
+      );
+    }
+    res.set({
+      'Content-Type': 'application/zip',
+      'Content-Disposition':
+        'attachment; filename="sheetpress-seo-bridge.zip"',
+    });
+    return new StreamableFile(createReadStream(filePath));
+  }
+
+  @Get(':siteId/seo-bridge')
+  checkSeoBridge(
+    @CurrentUser('id') userId: string,
+    @Param('siteId') siteId: string,
+  ) {
+    return this.wp.checkSeoBridge(siteId, userId);
+  }
 
   @Post(':siteId/posts')
   createPost(

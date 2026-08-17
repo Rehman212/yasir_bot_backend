@@ -59,6 +59,10 @@ export class CreateArticleDto {
   focusKeyword?: string;
 
   @IsOptional()
+  @IsString()
+  lsiKeywords?: string;
+
+  @IsOptional()
   @IsDateString()
   publishAt?: string;
 }

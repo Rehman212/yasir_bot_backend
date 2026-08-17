@@ -35,24 +35,90 @@ export class MediaService {
       dto.filename ||
       dto.sourceUrl.split('/').pop()?.split('?')[0] ||
       'image.jpg';
+    filename =
+      decodeURIComponent(filename).replace(/[^\w.\-]+/g, '_') || 'image';
 
     try {
       const res = await axios.get(dto.sourceUrl, {
         responseType: 'arraybuffer',
-        timeout: 30000,
+        timeout: 45000,
         maxContentLength: 15 * 1024 * 1024,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (compatible; SheetPress/1.0; +https://localhost)',
+          Accept: 'image/*,*/*',
+        },
+        validateStatus: (s) => s >= 200 && s < 400,
       });
       buffer = Buffer.from(res.data);
       const headerType = res.headers['content-type'];
       contentType =
-        typeof headerType === 'string' ? headerType : contentType;
+        typeof headerType === 'string'
+          ? headerType.split(';')[0].trim()
+          : contentType;
+      if (!contentType.startsWith('image/')) {
+        contentType = this.guessMimeFromFilename(filename);
+      }
     } catch (err) {
-      throw new BadRequestException(`Failed to download image: ${err.message}`);
+      throw new BadRequestException(
+        `Failed to download image URL. Use a direct public image link (https://...), not a Google Drive/view page. ${err.message}`,
+      );
     }
 
+    // WordPress rejects uploads without a known extension (Unsplash IDs have none)
+    filename = this.ensureImageFilename(filename, contentType);
+
+    return this.saveAndUploadToWp(
+      userId,
+      dto.siteId,
+      dto.sourceUrl,
+      buffer,
+      filename,
+      contentType,
+    );
+  }
+
+  async uploadFile(
+    userId: string,
+    siteId: string,
+    file: Express.Multer.File,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('Image file is required');
+    }
+    const site = await this.prisma.wordPressSite.findFirst({
+      where: { id: siteId, userId },
+    });
+    if (!site) throw new NotFoundException('Site not found');
+
+    const filename = this.ensureImageFilename(
+      (file.originalname || 'upload.jpg').replace(/[^\w.\-]+/g, '_'),
+      file.mimetype || 'image/jpeg',
+    );
+    const contentType = file.mimetype || this.guessMimeFromFilename(filename);
+    const sourceUrl = `local://${filename}`;
+
+    return this.saveAndUploadToWp(
+      userId,
+      siteId,
+      sourceUrl,
+      file.buffer,
+      filename,
+      contentType,
+    );
+  }
+
+  private async saveAndUploadToWp(
+    userId: string,
+    siteId: string,
+    sourceUrl: string,
+    buffer: Buffer,
+    filename: string,
+    contentType: string,
+  ) {
     const contentHash = createHash('sha256').update(buffer).digest('hex');
     const existing = await this.prisma.mediaAsset.findFirst({
-      where: { userId, siteId: dto.siteId, contentHash },
+      where: { userId, siteId, contentHash },
     });
 
     if (existing?.wpMediaId && existing.status === MediaStatus.UPLOADED) {
@@ -65,8 +131,8 @@ export class MediaService {
     const asset = await this.prisma.mediaAsset.create({
       data: {
         userId,
-        siteId: dto.siteId,
-        sourceUrl: dto.sourceUrl,
+        siteId,
+        sourceUrl,
         filename,
         contentHash,
         status: MediaStatus.PENDING,
@@ -76,7 +142,7 @@ export class MediaService {
 
     try {
       const uploaded = await this.wp.uploadImage(
-        dto.siteId,
+        siteId,
         buffer,
         filename,
         contentType,
@@ -88,21 +154,21 @@ export class MediaService {
           wpMediaId: uploaded!.data.id,
           status: MediaStatus.UPLOADED,
           error: null,
+          sourceUrl: uploaded!.data.source_url || sourceUrl,
         },
       });
       return { data: updated, deduplicated: false };
     } catch (err) {
-      const failed = await this.prisma.mediaAsset.update({
+      await this.prisma.mediaAsset.update({
         where: { id: asset.id },
         data: {
           status: MediaStatus.FAILED,
           error: err.message,
         },
       });
-      throw new BadRequestException({
-        message: 'Media upload to WordPress failed',
-        data: failed,
-      });
+      throw new BadRequestException(
+        `Media upload to WordPress failed: ${err.message}`,
+      );
     }
   }
 
@@ -111,6 +177,7 @@ export class MediaService {
       where: { userId, ...(siteId && { siteId }) },
       orderBy: { createdAt: 'desc' },
       take: 100,
+      include: { site: { select: { id: true, name: true } } },
     });
     return { data: assets };
   }
@@ -122,8 +189,10 @@ export class MediaService {
 
   async retry(userId: string, id: string) {
     const asset = await this.getOwned(userId, id);
-    if (!asset.sourceUrl) {
-      throw new BadRequestException('No source URL to retry');
+    if (!asset.sourceUrl || asset.sourceUrl.startsWith('local://')) {
+      throw new BadRequestException(
+        'Cannot retry local uploads without the original file. Upload again.',
+      );
     }
     return this.uploadFromUrl(userId, {
       siteId: asset.siteId,
@@ -148,6 +217,30 @@ export class MediaService {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new BadRequestException('Only HTTP(S) URLs are allowed');
     }
+  }
+
+  private guessMimeFromFilename(filename: string) {
+    const lower = filename.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.gif')) return 'image/gif';
+    if (lower.endsWith('.jpeg') || lower.endsWith('.jpg')) return 'image/jpeg';
+    return 'image/jpeg';
+  }
+
+  private ensureImageFilename(filename: string, contentType: string) {
+    const base = (filename || 'image').replace(/[^\w.\-]+/g, '_') || 'image';
+    const hasExt = /\.(jpe?g|png|gif|webp)$/i.test(base);
+    if (hasExt) return base;
+
+    const mime = (contentType || '').toLowerCase();
+    let ext = 'jpg';
+    if (mime.includes('png')) ext = 'png';
+    else if (mime.includes('webp')) ext = 'webp';
+    else if (mime.includes('gif')) ext = 'gif';
+    else if (mime.includes('jpeg') || mime.includes('jpg')) ext = 'jpg';
+
+    return `${base}.${ext}`;
   }
 
   private async getOwned(userId: string, id: string) {
