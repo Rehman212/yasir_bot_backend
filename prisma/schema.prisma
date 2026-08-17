@@ -1,0 +1,370 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum SiteStatus {
+  CONNECTED
+  NEEDS_RECONNECT
+  DISCONNECTED
+}
+
+enum ArticleStatus {
+  DRAFT
+  QUEUED
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ImportSource {
+  EXCEL
+  CSV
+  GOOGLE_SHEETS
+  MANUAL
+}
+
+enum ImportStatus {
+  PENDING
+  VALIDATING
+  COMPLETED
+  FAILED
+}
+
+enum MediaStatus {
+  PENDING
+  UPLOADED
+  FAILED
+  LINKED
+}
+
+enum JobStatus {
+  WAITING
+  ACTIVE
+  COMPLETED
+  FAILED
+  DELAYED
+  PAUSED
+  CANCELLED
+}
+
+enum TaxonomyType {
+  CATEGORY
+  TAG
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  AGENCY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+}
+
+enum SupportStatus {
+  OPEN
+  RESOLVED
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String?
+  name            String
+  role            UserRole  @default(USER)
+  status          UserStatus @default(ACTIVE)
+  emailVerifiedAt DateTime?
+  googleId        String?   @unique
+  preferences     Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  refreshTokens           RefreshToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  sites                   WordPressSite[]
+  importBatches           ImportBatch[]
+  articles                Article[]
+  mediaAssets             MediaAsset[]
+  publishJobs             PublishJob[]
+  notifications           Notification[]
+  subscription            Subscription?
+  auditLogs               AuditLog[]
+  supportRequests         SupportRequest[]
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model WordPressSite {
+  id               String     @id @default(cuid())
+  userId           String
+  name             String
+  url              String
+  username         String
+  encryptedPassword String
+  status           SiteStatus @default(DISCONNECTED)
+  lastConnectedAt  DateTime?
+  wpInfo           Json?
+  publishedCount   Int        @default(0)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  importBatches ImportBatch[]
+  articles      Article[]
+  mediaAssets   MediaAsset[]
+  taxonomyTerms TaxonomyTerm[]
+  publishJobs   PublishJob[]
+
+  @@index([userId])
+}
+
+model ImportBatch {
+  id            String       @id @default(cuid())
+  userId        String
+  siteId        String
+  filename      String?
+  source        ImportSource
+  status        ImportStatus @default(PENDING)
+  columnMapping Json?
+  rowCount      Int          @default(0)
+  errorCount    Int          @default(0)
+  errors        Json?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site     WordPressSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  articles Article[]
+
+  @@index([userId])
+  @@index([siteId])
+}
+
+model Article {
+  id               String        @id @default(cuid())
+  userId           String
+  siteId           String
+  importBatchId    String?
+  title            String
+  content          String        @default("")
+  excerpt          String?
+  slug             String?
+  status           ArticleStatus @default(DRAFT)
+  category         String?
+  tags             String[]      @default([])
+  featuredImageUrl String?
+  seoTitle         String?
+  seoDescription   String?
+  focusKeyword     String?
+  wpPostId         Int?
+  wpUrl            String?
+  publishAt        DateTime?
+  duplicateOfId    String?
+  errorMessage     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site        WordPressSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  importBatch ImportBatch?  @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  duplicateOf Article?      @relation("ArticleDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
+  duplicates  Article[]     @relation("ArticleDuplicates")
+  publishJobs PublishJob[]
+
+  @@index([userId])
+  @@index([siteId])
+  @@index([status])
+  @@index([title])
+}
+
+model MediaAsset {
+  id          String      @id @default(cuid())
+  userId      String
+  siteId      String
+  sourceUrl   String
+  filename    String?
+  contentHash String?
+  wpMediaId   Int?
+  status      MediaStatus @default(PENDING)
+  sizeBytes   Int?
+  error       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site WordPressSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([siteId])
+  @@index([contentHash])
+}
+
+model TaxonomyTerm {
+  id        String       @id @default(cuid())
+  siteId    String
+  type      TaxonomyType
+  name      String
+  slug      String
+  wpId      Int?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  site WordPressSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, type, slug])
+  @@index([siteId])
+}
+
+model PublishJob {
+  id          String    @id @default(cuid())
+  articleId   String
+  siteId      String
+  userId      String
+  bullJobId   String?
+  status      JobStatus @default(WAITING)
+  scheduledAt DateTime?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  error       String?
+  progress    Int       @default(0)
+  timezone    String?   @default("UTC")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  article Article       @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  site    WordPressSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([articleId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  message   String
+  readAt    DateTime?
+  meta      Json?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Subscription {
+  id            String             @id @default(cuid())
+  userId        String             @unique
+  plan          PlanType           @default(FREE)
+  status        SubscriptionStatus @default(ACTIVE)
+  articleLimit  Int                @default(10)
+  websiteLimit  Int                @default(1)
+  articlesUsed  Int                @default(0)
+  periodStart   DateTime           @default(now())
+  periodEnd     DateTime
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  billingHistory BillingHistory[]
+}
+
+model BillingHistory {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  amount         Float
+  currency       String   @default("USD")
+  description    String
+  paidAt         DateTime @default(now())
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+model SupportRequest {
+  id        String        @id @default(cuid())
+  userId    String
+  subject   String
+  message   String
+  status    SupportStatus @default(OPEN)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

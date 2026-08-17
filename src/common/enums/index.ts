@@ -1,0 +1,102 @@
+export enum UserRole {
+  USER = 'USER',
+  ADMIN = 'ADMIN',
+}
+
+export enum UserStatus {
+  ACTIVE = 'ACTIVE',
+  SUSPENDED = 'SUSPENDED',
+  DELETED = 'DELETED',
+}
+
+export enum SiteStatus {
+  CONNECTED = 'CONNECTED',
+  NEEDS_RECONNECT = 'NEEDS_RECONNECT',
+  DISCONNECTED = 'DISCONNECTED',
+}
+
+export enum ArticleStatus {
+  DRAFT = 'DRAFT',
+  QUEUED = 'QUEUED',
+  SCHEDULED = 'SCHEDULED',
+  PUBLISHED = 'PUBLISHED',
+  FAILED = 'FAILED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum JobStatus {
+  WAITING = 'WAITING',
+  ACTIVE = 'ACTIVE',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  DELAYED = 'DELAYED',
+  PAUSED = 'PAUSED',
+  CANCELLED = 'CANCELLED',
+}
+
+export enum ImportStatus {
+  PENDING = 'PENDING',
+  VALIDATING = 'VALIDATING',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+}
+
+export enum MediaStatus {
+  PENDING = 'PENDING',
+  UPLOADED = 'UPLOADED',
+  FAILED = 'FAILED',
+  LINKED = 'LINKED',
+}
+
+export enum NotificationType {
+  IMPORT_COMPLETED = 'IMPORT_COMPLETED',
+  IMPORT_FAILED = 'IMPORT_FAILED',
+  PUBLISH_COMPLETED = 'PUBLISH_COMPLETED',
+  PUBLISH_FAILED = 'PUBLISH_FAILED',
+  SCHEDULE_REMINDER = 'SCHEDULE_REMINDER',
+  SYSTEM = 'SYSTEM',
+  SUBSCRIPTION = 'SUBSCRIPTION',
+}
+
+export enum PlanType {
+  FREE = 'FREE',
+  STARTER = 'STARTER',
+  PROFESSIONAL = 'PROFESSIONAL',
+  AGENCY = 'AGENCY',
+}
+
+export enum SubscriptionStatus {
+  ACTIVE = 'ACTIVE',
+  CANCELED = 'CANCELED',
+  PAST_DUE = 'PAST_DUE',
+}
+
+export enum TaxonomyType {
+  CATEGORY = 'CATEGORY',
+  TAG = 'TAG',
+}
+
+export enum AuditAction {
+  CREATE = 'CREATE',
+  UPDATE = 'UPDATE',
+  DELETE = 'DELETE',
+  LOGIN = 'LOGIN',
+  LOGOUT = 'LOGOUT',
+  PUBLISH = 'PUBLISH',
+  IMPORT = 'IMPORT',
+  CONNECT = 'CONNECT',
+  DISCONNECT = 'DISCONNECT',
+  ADMIN = 'ADMIN',
+}
+
+export enum SupportStatus {
+  OPEN = 'OPEN',
+  RESOLVED = 'RESOLVED',
+}
+
+export enum ImportSource {
+  EXCEL = 'EXCEL',
+  CSV = 'CSV',
+  GOOGLE_SHEETS = 'GOOGLE_SHEETS',
+  MANUAL = 'MANUAL',
+}
