@@ -21,6 +21,7 @@ import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AdminModule } from './admin/admin.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { TemplatesModule } from './templates/templates.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
     AuditLogsModule,
     AdminModule,
     DashboardModule,
+    TemplatesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -5,6 +5,7 @@ import { WordPressIntegrationModule } from '../wordpress-integration/wordpress-i
 import { TaxonomyModule } from '../taxonomy/taxonomy.module';
 import { MediaModule } from '../media/media.module';
 import { SeoModule } from '../seo/seo.module';
+import { TemplatesModule } from '../templates/templates.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { SeoModule } from '../seo/seo.module';
     TaxonomyModule,
     MediaModule,
     forwardRef(() => SeoModule),
+    TemplatesModule,
   ],
   controllers: [PublishingController],
   providers: [PublishingService],

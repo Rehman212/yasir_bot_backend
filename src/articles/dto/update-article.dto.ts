@@ -62,6 +62,10 @@ export class UpdateArticleDto {
   lsiKeywords?: string;
 
   @IsOptional()
+  @IsString()
+  templateId?: string;
+
+  @IsOptional()
   @IsDateString()
   publishAt?: string;
 }

@@ -118,6 +118,9 @@ export class ArticlesService {
         ...(dto.lsiKeywords !== undefined && {
           lsiKeywords: dto.lsiKeywords,
         }),
+        ...(dto.templateId !== undefined && {
+          templateId: dto.templateId || null,
+        }),
         ...(dto.publishAt !== undefined && {
           publishAt: dto.publishAt ? new Date(dto.publishAt) : null,
         }),

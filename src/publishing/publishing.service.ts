@@ -10,6 +10,7 @@ import { WordPressIntegrationService } from '../wordpress-integration/wordpress-
 import { TaxonomyService } from '../taxonomy/taxonomy.service';
 import { MediaService } from '../media/media.service';
 import { SeoService } from '../seo/seo.service';
+import { TemplatesService } from '../templates/templates.service';
 import { ArticleStatus, NotificationType } from '../common/enums';
 
 @Injectable()
@@ -22,16 +23,32 @@ export class PublishingService {
     private readonly taxonomy: TaxonomyService,
     private readonly media: MediaService,
     private readonly seo: SeoService,
+    private readonly templates: TemplatesService,
   ) {}
 
   async preparePayload(userId: string, articleId: string) {
     const article = await this.getOwnedArticle(userId, articleId);
+    const template = await this.templates.resolveForArticle(
+      userId,
+      article.siteId,
+      article.templateId,
+    );
+    const content = this.templates.applyToContent(article.content, template);
+
+    const category = article.category || template?.category || undefined;
+    const tags =
+      article.tags?.length > 0
+        ? article.tags
+        : template?.tags?.length
+          ? template.tags
+          : [];
+
     const { categoryIds, tagIds } =
       await this.taxonomy.ensureTermsForArticle(
         userId,
         article.siteId,
-        article.category,
-        article.tags,
+        category,
+        tags,
       );
 
     let featuredMedia: number | undefined;
@@ -89,7 +106,7 @@ export class PublishingService {
 
     return {
       title: article.title,
-      content: article.content,
+      content,
       excerpt: article.excerpt || undefined,
       slug: article.slug || undefined,
       categories: categoryIds,
@@ -98,6 +115,7 @@ export class PublishingService {
       meta,
       article,
       featuredImageError,
+      templateName: template?.name,
     };
   }
 

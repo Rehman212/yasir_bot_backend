@@ -107,6 +107,7 @@ model User {
   importBatches           ImportBatch[]
   articles                Article[]
   mediaAssets             MediaAsset[]
+  contentTemplates        ContentTemplate[]
   publishJobs             PublishJob[]
   notifications           Notification[]
   subscription            Subscription?
@@ -167,6 +168,7 @@ model WordPressSite {
   mediaAssets   MediaAsset[]
   taxonomyTerms TaxonomyTerm[]
   publishJobs   PublishJob[]
+  contentTemplates ContentTemplate[]
 
   @@index([userId])
 }
@@ -210,6 +212,7 @@ model Article {
   seoDescription   String?
   focusKeyword     String?
   lsiKeywords      String?
+  templateId       String?
   wpPostId         Int?
   wpUrl            String?
   publishAt        DateTime?
@@ -221,6 +224,7 @@ model Article {
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   site        WordPressSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
   importBatch ImportBatch?  @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  template    ContentTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   duplicateOf Article?      @relation("ArticleDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates  Article[]     @relation("ArticleDuplicates")
   publishJobs PublishJob[]
@@ -229,6 +233,28 @@ model Article {
   @@index([siteId])
   @@index([status])
   @@index([title])
+  @@index([templateId])
+}
+
+model ContentTemplate {
+  id            String   @id @default(cuid())
+  userId        String
+  siteId        String?
+  name          String
+  category      String?
+  tags          String[] @default([])
+  contentBefore String?  @db.Text
+  contentAfter  String?  @db.Text
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  site     WordPressSite? @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  articles Article[]
+
+  @@index([userId])
+  @@index([siteId])
 }
 
 model MediaAsset {
