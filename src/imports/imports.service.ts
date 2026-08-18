@@ -187,6 +187,18 @@ export class ImportsService {
         });
       }
 
+      const importedArticles = await this.prisma.article.findMany({
+        where: { userId, importBatchId: batch.id },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          category: true,
+          publishAt: true,
+        },
+      });
+
       await this.prisma.notification.create({
         data: {
           userId,
@@ -219,6 +231,7 @@ export class ImportsService {
         data: {
           batch,
           imported: articles.length,
+          articles: importedArticles,
           errors,
         },
       };
