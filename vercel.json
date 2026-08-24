@@ -1,6 +1,6 @@
 {
   "buildCommand": "npm run vercel-build",
-  "installCommand": "npm install",
+  "outputDirectory": "public",
   "framework": null,
   "functions": {
     "api/index.ts": {
@@ -10,6 +10,7 @@
     }
   },
   "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/(.*)", "destination": "/api" }
   ]
 }
