@@ -16,6 +16,18 @@ async function getApp(): Promise<Express> {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const app = await getApp();
-  return app(req, res);
+  try {
+    const app = await getApp();
+    return app(req, res);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[api] bootstrap failed:', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'FUNCTION_BOOTSTRAP_FAILED',
+        message,
+        hint: 'Set DATABASE_URL, JWT_SECRET, ENCRYPTION_KEY on Vercel. Redis is disabled on Vercel.',
+      });
+    }
+  }
 }

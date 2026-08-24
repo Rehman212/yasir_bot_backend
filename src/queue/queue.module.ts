@@ -6,7 +6,9 @@ import { QueueController } from './queue.controller';
 import { PublishProcessor } from './processors/publish.processor';
 import { PublishingModule } from '../publishing/publishing.module';
 
-const redisEnabled = process.env.REDIS_ENABLED !== 'false';
+// Opt-in only. Vercel has no Redis; leaving this "on by default" crashes cold starts.
+const redisEnabled =
+  process.env.REDIS_ENABLED === 'true' && !process.env.VERCEL;
 
 const mockQueueProvider = {
   provide: `BullQueue_${PUBLISH_QUEUE}`,
