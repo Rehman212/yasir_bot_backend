@@ -355,6 +355,13 @@ export class WordPressIntegrationService {
       const res = await http.post('/categories', dto);
       return { data: res.data };
     } catch (err) {
+      const existing = await this.recoverExistingTerm(
+        http,
+        'categories',
+        dto,
+        err,
+      );
+      if (existing) return { data: existing, existing: true };
       this.throwWpError('createCategory', err);
     }
   }
@@ -375,8 +382,58 @@ export class WordPressIntegrationService {
       const res = await http.post('/tags', dto);
       return { data: res.data };
     } catch (err) {
+      const existing = await this.recoverExistingTerm(http, 'tags', dto, err);
+      if (existing) return { data: existing, existing: true };
       this.throwWpError('createTag', err);
     }
+  }
+
+  /**
+   * WordPress returns `term_exists` when its taxonomy already has a term that
+   * SheetPress has not cached locally yet. Resolve and reuse that WP term
+   * instead of failing the whole article publish.
+   */
+  private async recoverExistingTerm(
+    http: AxiosInstance,
+    endpoint: 'categories' | 'tags',
+    dto: CreateTaxonomyDto,
+    err: any,
+  ): Promise<any | undefined> {
+    const wpError = err?.response?.data;
+    if (wpError?.code !== 'term_exists') return undefined;
+
+    try {
+      const termId = Number(wpError?.data?.term_id);
+      if (Number.isFinite(termId) && termId > 0) {
+        const byId = await http.get(`/${endpoint}/${termId}`);
+        this.logger.log(
+          `Reusing existing WordPress ${endpoint.slice(0, -1)} ${termId}: ${dto.name}`,
+        );
+        return byId.data;
+      }
+
+      const searched = await http.get(`/${endpoint}`, {
+        params: { search: dto.name, per_page: 100 },
+      });
+      const normalizedName = dto.name.trim().toLowerCase();
+      const match = (searched.data as any[]).find(
+        (term) =>
+          String(term.name || '').trim().toLowerCase() === normalizedName ||
+          (dto.slug && term.slug === dto.slug),
+      );
+      if (match) {
+        this.logger.log(
+          `Reusing existing WordPress ${endpoint.slice(0, -1)} ${match.id}: ${dto.name}`,
+        );
+        return match;
+      }
+    } catch (lookupError) {
+      this.logger.warn(
+        `Could not resolve existing WordPress term "${dto.name}": ${lookupError?.message}`,
+      );
+    }
+
+    return undefined;
   }
 
   async fetchAuthors(siteId: string, userId?: string) {
