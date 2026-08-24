@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "buildCommand": "prisma generate && nest build",
+  "installCommand": "npm install",
+  "functions": {
+    "api/index.ts": {
+      "memory": 1024,
+      "maxDuration": 60,
+      "includeFiles": "{dist/**,node_modules/.prisma/**,node_modules/@prisma/client/**,prisma/**}"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api" }
+  ]
+}
