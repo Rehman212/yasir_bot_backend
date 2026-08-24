@@ -7,12 +7,12 @@ import {
   Get,
   Res,
   HttpCode,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
-import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
@@ -29,8 +29,10 @@ export class AuthController {
   ) {}
 
   @Post('signup')
-  signup(@Body() dto: SignupDto) {
-    return this.authService.signup(dto);
+  signup() {
+    throw new ForbiddenException(
+      'Public signup is disabled. Ask an admin to create your account.',
+    );
   }
 
   @UseGuards(AuthGuard('local'))
