@@ -1,11 +1,12 @@
 import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChangePlanDto } from './dto/subscription.dto';
 
 @Controller('subscriptions')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FeaturesGuard)
 export class SubscriptionsController {
   constructor(private readonly subscriptionsService: SubscriptionsService) {}
 

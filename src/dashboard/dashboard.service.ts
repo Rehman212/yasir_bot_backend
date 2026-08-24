@@ -9,7 +9,7 @@ export class DashboardService {
     const [
       connectedWebsites,
       importedArticles,
-      published,
+      publishedAgg,
       scheduled,
       failed,
       subscription,
@@ -21,7 +21,10 @@ export class DashboardService {
         where: { userId, status: 'CONNECTED' },
       }),
       this.prisma.article.count({ where: { userId } }),
-      this.prisma.article.count({ where: { userId, status: 'PUBLISHED' } }),
+      this.prisma.wordPressSite.aggregate({
+        where: { userId },
+        _sum: { publishedCount: true },
+      }),
       this.prisma.article.count({
         where: { userId, status: { in: ['SCHEDULED', 'QUEUED'] } },
       }),
@@ -46,6 +49,7 @@ export class DashboardService {
       }),
     ]);
 
+    const published = publishedAgg._sum.publishedCount || 0;
     const monthlyUsage = subscription
       ? `${subscription.articlesUsed} / ${subscription.articleLimit}`
       : '0 / 10';

@@ -10,12 +10,13 @@ import {
 } from '@nestjs/common';
 import { WordPressSitesService } from './wordpress-sites.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateSiteDto } from './dto/create-site.dto';
 import { UpdateSiteDto } from './dto/update-site.dto';
 
 @Controller('wordpress-sites')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FeaturesGuard)
 export class WordPressSitesController {
   constructor(private readonly sitesService: WordPressSitesService) {}
 

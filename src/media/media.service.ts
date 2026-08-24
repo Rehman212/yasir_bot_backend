@@ -12,6 +12,9 @@ import { WordPressIntegrationService } from '../wordpress-integration/wordpress-
 import { MediaStatus } from '../common/enums';
 import { UploadFromUrlDto } from './dto/upload-from-url.dto';
 
+const MAX_LIBRARY_IMAGES = 5;
+const MAX_BYTES = 100 * 1024; // 100KB
+
 @Injectable()
 export class MediaService {
   private readonly logger = new Logger(MediaService.name);
@@ -21,8 +24,13 @@ export class MediaService {
     private readonly wp: WordPressIntegrationService,
   ) {}
 
-  async uploadFromUrl(userId: string, dto: UploadFromUrlDto) {
+  async uploadFromUrl(
+    userId: string,
+    dto: UploadFromUrlDto,
+    opts?: { enforceLimits?: boolean },
+  ) {
     this.validateUrl(dto.sourceUrl);
+    const enforceLimits = opts?.enforceLimits !== false;
 
     const site = await this.prisma.wordPressSite.findFirst({
       where: { id: dto.siteId, userId },
@@ -42,7 +50,7 @@ export class MediaService {
       const res = await axios.get(dto.sourceUrl, {
         responseType: 'arraybuffer',
         timeout: 45000,
-        maxContentLength: 15 * 1024 * 1024,
+        maxContentLength: enforceLimits ? MAX_BYTES : 15 * 1024 * 1024,
         headers: {
           'User-Agent':
             'Mozilla/5.0 (compatible; SheetPress/1.0; +https://localhost)',
@@ -65,7 +73,6 @@ export class MediaService {
       );
     }
 
-    // WordPress rejects uploads without a known extension (Unsplash IDs have none)
     filename = this.ensureImageFilename(filename, contentType);
 
     return this.saveAndUploadToWp(
@@ -75,6 +82,7 @@ export class MediaService {
       buffer,
       filename,
       contentType,
+      { enforceLimits },
     );
   }
 
@@ -92,8 +100,8 @@ export class MediaService {
     if (!site) throw new NotFoundException('Site not found');
 
     const filename = this.ensureImageFilename(
-      (file.originalname || 'upload.jpg').replace(/[^\w.\-]+/g, '_'),
-      file.mimetype || 'image/jpeg',
+      (file.originalname || 'upload.webp').replace(/[^\w.\-]+/g, '_'),
+      file.mimetype || 'image/webp',
     );
     const contentType = file.mimetype || this.guessMimeFromFilename(filename);
     const sourceUrl = `local://${filename}`;
@@ -105,6 +113,7 @@ export class MediaService {
       file.buffer,
       filename,
       contentType,
+      { enforceLimits: true },
     );
   }
 
@@ -115,6 +124,7 @@ export class MediaService {
     buffer: Buffer,
     filename: string,
     contentType: string,
+    opts: { enforceLimits: boolean },
   ) {
     const contentHash = createHash('sha256').update(buffer).digest('hex');
     const existing = await this.prisma.mediaAsset.findFirst({
@@ -128,17 +138,35 @@ export class MediaService {
       };
     }
 
-    const asset = await this.prisma.mediaAsset.create({
-      data: {
-        userId,
-        siteId,
-        sourceUrl,
-        filename,
-        contentHash,
-        status: MediaStatus.PENDING,
-        sizeBytes: buffer.length,
-      },
-    });
+    if (opts.enforceLimits) {
+      this.assertWebpAndSize(buffer, filename, contentType);
+      await this.assertUnderQuota(userId, existing?.id);
+    }
+
+    const asset =
+      existing ||
+      (await this.prisma.mediaAsset.create({
+        data: {
+          userId,
+          siteId,
+          sourceUrl,
+          filename,
+          contentHash,
+          status: MediaStatus.PENDING,
+          sizeBytes: buffer.length,
+        },
+      }));
+
+    if (existing) {
+      await this.prisma.mediaAsset.update({
+        where: { id: existing.id },
+        data: {
+          status: MediaStatus.PENDING,
+          sizeBytes: buffer.length,
+          error: null,
+        },
+      });
+    }
 
     try {
       const uploaded = await this.wp.uploadImage(
@@ -179,7 +207,21 @@ export class MediaService {
       take: 100,
       include: { site: { select: { id: true, name: true } } },
     });
-    return { data: assets };
+    const used = await this.prisma.mediaAsset.count({
+      where: {
+        userId,
+        status: { in: [MediaStatus.UPLOADED, MediaStatus.PENDING, MediaStatus.LINKED] },
+      },
+    });
+    return {
+      data: assets,
+      meta: {
+        used,
+        limit: MAX_LIBRARY_IMAGES,
+        maxBytes: MAX_BYTES,
+        format: 'image/webp',
+      },
+    };
   }
 
   async findOne(userId: string, id: string) {
@@ -202,9 +244,55 @@ export class MediaService {
   }
 
   async remove(userId: string, id: string) {
-    await this.getOwned(userId, id);
+    const asset = await this.getOwned(userId, id);
+    if (asset.wpMediaId) {
+      try {
+        await this.wp.deleteMedia(asset.siteId, asset.wpMediaId, userId);
+      } catch (err) {
+        this.logger.warn(
+          `WordPress media delete failed for ${id}: ${err?.message || err}`,
+        );
+      }
+    }
     await this.prisma.mediaAsset.delete({ where: { id } });
     return { data: { deleted: true } };
+  }
+
+  private assertWebpAndSize(
+    buffer: Buffer,
+    filename: string,
+    contentType: string,
+  ) {
+    const mime = (contentType || '').toLowerCase();
+    const isWebp =
+      mime.includes('webp') || filename.toLowerCase().endsWith('.webp');
+    if (!isWebp) {
+      throw new BadRequestException(
+        'Only WebP images are allowed in the media library (.webp, image/webp).',
+      );
+    }
+    if (buffer.length > MAX_BYTES) {
+      throw new BadRequestException(
+        `Image must be under 100KB (got ${Math.ceil(buffer.length / 1024)}KB).`,
+      );
+    }
+  }
+
+  private async assertUnderQuota(userId: string, excludeId?: string) {
+    const used = await this.prisma.mediaAsset.count({
+      where: {
+        userId,
+        status: {
+          in: [MediaStatus.UPLOADED, MediaStatus.PENDING, MediaStatus.LINKED],
+        },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+    });
+    if (used >= MAX_LIBRARY_IMAGES) {
+      throw new BadRequestException(
+        `Media limit reached (${MAX_LIBRARY_IMAGES}). Delete an image first to free space.`,
+      );
+    }
   }
 
   private validateUrl(url: string) {

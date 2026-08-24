@@ -41,17 +41,29 @@ export class PublishProcessor extends WorkerHost {
       await job.updateProgress(30);
       const result = await this.publishing.publish(userId, articleId);
 
-      await this.prisma.publishJob.update({
-        where: { id: publishJobId },
-        data: {
-          status: JobStatus.COMPLETED,
-          progress: 100,
-          error: null,
-        },
-      });
+      // Article (and cascaded PublishJob) may already be deleted after success
+      try {
+        await this.prisma.publishJob.update({
+          where: { id: publishJobId },
+          data: {
+            status: JobStatus.COMPLETED,
+            progress: 100,
+            error: null,
+          },
+        });
+      } catch {
+        this.logger.debug(
+          `PublishJob ${publishJobId} already removed with published article`,
+        );
+      }
 
       await job.updateProgress(100);
-      return { success: true, articleId, wpUrl: result.data.wpUrl };
+      return {
+        success: true,
+        articleId,
+        wpUrl: result.data?.wpUrl ?? (result as any).wp?.link,
+        removedFromDb: (result as any).removedFromDb === true,
+      };
     } catch (err) {
       this.logger.error(`Publish failed for ${articleId}: ${err.message}`);
 

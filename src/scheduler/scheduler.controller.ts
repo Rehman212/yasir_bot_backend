@@ -9,11 +9,12 @@ import {
 } from '@nestjs/common';
 import { SchedulerService } from './scheduler.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ScheduleBatchDto, RecoverMissedDto } from './dto/schedule.dto';
 
 @Controller('scheduler')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FeaturesGuard)
 export class SchedulerController {
   constructor(private readonly schedulerService: SchedulerService) {}
 

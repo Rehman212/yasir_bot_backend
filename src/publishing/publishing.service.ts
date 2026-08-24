@@ -60,10 +60,14 @@ export class PublishingService {
         this.logger.warn(featuredImageError);
       } else {
         try {
-          const uploaded = await this.media.uploadFromUrl(userId, {
-            siteId: article.siteId,
-            sourceUrl: imageUrl,
-          });
+          const uploaded = await this.media.uploadFromUrl(
+            userId,
+            {
+              siteId: article.siteId,
+              sourceUrl: imageUrl,
+            },
+            { enforceLimits: false },
+          );
           if (uploaded.data.wpMediaId) {
             featuredMedia = uploaded.data.wpMediaId;
           } else {
@@ -254,11 +258,33 @@ export class PublishingService {
       },
     });
 
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'ARTICLE_PUBLISHED',
+        entity: 'Article',
+        entityId: articleId,
+        metadata: {
+          title: article.title,
+          wpUrl: result!.data.link,
+          siteId: article.siteId,
+          wpPostId: Number(result!.data.id),
+        },
+      },
+    });
+
+    // Free DB space: drop local copy after successful WordPress publish
+    await this.prisma.article.delete({ where: { id: articleId } });
+    this.logger.log(
+      `Published article ${articleId} removed from DB (kept on WordPress)`,
+    );
+
     return {
       data: updated,
       wp: result!.data,
       warning,
       seoWarning,
+      removedFromDb: true,
     };
   }
 

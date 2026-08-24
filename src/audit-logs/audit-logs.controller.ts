@@ -9,11 +9,12 @@ import {
 } from '@nestjs/common';
 import { AuditLogsService } from './audit-logs.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateAuditLogDto, AuditLogQueryDto } from './dto/audit-log.dto';
 
 @Controller('audit-logs')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FeaturesGuard)
 export class AuditLogsController {
   constructor(private readonly auditLogsService: AuditLogsService) {}
 

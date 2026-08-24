@@ -17,6 +17,7 @@ import { createReadStream, existsSync } from 'fs';
 import { join } from 'path';
 import { WordPressIntegrationService } from './wordpress-integration.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
   CreatePostDto,
@@ -25,7 +26,7 @@ import {
 } from './dto/wp-post.dto';
 
 @Controller('wordpress-integration')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FeaturesGuard)
 export class WordPressIntegrationController {
   constructor(private readonly wp: WordPressIntegrationService) {}
 

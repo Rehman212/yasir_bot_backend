@@ -323,6 +323,18 @@ export class WordPressIntegrationService {
     }
   }
 
+  async deleteMedia(siteId: string, mediaId: number, userId?: string) {
+    const { http } = await this.client(siteId, userId);
+    try {
+      const res = await http.delete(`/media/${mediaId}`, {
+        params: { force: true },
+      });
+      return { data: { deleted: true, id: mediaId, raw: res.data } };
+    } catch (err) {
+      this.throwWpError('deleteMedia', err);
+    }
+  }
+
   private ensureWpFilename(filename: string, mimeType: string) {
     const base = (filename || 'image').replace(/[^\w.\-]+/g, '_') || 'image';
     if (/\.(jpe?g|png|gif|webp)$/i.test(base)) return base;

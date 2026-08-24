@@ -11,11 +11,12 @@ import {
 } from '@nestjs/common';
 import { TemplatesService } from './templates.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateTemplateDto, UpdateTemplateDto } from './dto/template.dto';
 
 @Controller('templates')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FeaturesGuard)
 export class TemplatesController {
   constructor(private readonly templates: TemplatesService) {}
 

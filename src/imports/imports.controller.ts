@@ -14,6 +14,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ImportsService } from './imports.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
   GoogleSheetsImportDto,
@@ -21,7 +22,7 @@ import {
 } from './dto/import.dto';
 
 @Controller('imports')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FeaturesGuard)
 export class ImportsController {
   constructor(private readonly importsService: ImportsService) {}
 

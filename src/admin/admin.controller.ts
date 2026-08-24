@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -12,6 +13,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PlanType, UserRole, UserStatus } from '../common/enums';
+import { APP_FEATURES } from '../common/features';
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -24,9 +26,28 @@ export class AdminController {
     return this.adminService.getStats();
   }
 
+  @Get('features')
+  listFeatures() {
+    return { data: APP_FEATURES };
+  }
+
   @Get('users')
   listUsers(@Query('page') page?: number, @Query('limit') limit?: number) {
-    return this.adminService.listUsers(page || 1, limit || 20);
+    return this.adminService.listUsers(Number(page) || 1, Number(limit) || 20);
+  }
+
+  @Post('users')
+  createUser(
+    @Body()
+    body: {
+      email: string;
+      name: string;
+      password: string;
+      role?: UserRole;
+      deniedFeatures?: string[];
+    },
+  ) {
+    return this.adminService.createUser(body);
   }
 
   @Patch('users/:id/status')
@@ -35,6 +56,19 @@ export class AdminController {
     @Body('status') status: UserStatus,
   ) {
     return this.adminService.updateUserStatus(id, status);
+  }
+
+  @Patch('users/:id/role')
+  updateUserRole(@Param('id') id: string, @Body('role') role: UserRole) {
+    return this.adminService.updateUserRole(id, role);
+  }
+
+  @Patch('users/:id/permissions')
+  updateUserPermissions(
+    @Param('id') id: string,
+    @Body('deniedFeatures') deniedFeatures: string[],
+  ) {
+    return this.adminService.updateUserDeniedFeatures(id, deniedFeatures || []);
   }
 
   @Patch('users/:id/plan')

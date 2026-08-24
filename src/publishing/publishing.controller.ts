@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PublishingService } from './publishing.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import {
   PublishArticleDto,
@@ -14,7 +15,7 @@ import {
 } from './dto/publish.dto';
 
 @Controller('publishing')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, FeaturesGuard)
 export class PublishingController {
   constructor(private readonly publishingService: PublishingService) {}
 

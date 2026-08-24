@@ -22,10 +22,12 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AdminModule } from './admin/admin.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { TemplatesModule } from './templates/templates.module';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    CommonModule,
     PrismaModule,
     CryptoModule,
     AuthModule,
