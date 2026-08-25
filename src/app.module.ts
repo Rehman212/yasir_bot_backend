@@ -22,6 +22,7 @@ import { AuditLogsModule } from './audit-logs/audit-logs.module';
 import { AdminModule } from './admin/admin.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { TemplatesModule } from './templates/templates.module';
+import { SiteSettingsModule } from './site-settings/site-settings.module';
 import { CommonModule } from './common/common.module';
 
 @Module({
@@ -48,6 +49,7 @@ import { CommonModule } from './common/common.module';
     AdminModule,
     DashboardModule,
     TemplatesModule,
+    SiteSettingsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

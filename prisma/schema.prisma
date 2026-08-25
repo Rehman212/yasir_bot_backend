@@ -398,3 +398,14 @@ model SupportRequest {
 
   @@index([userId])
 }
+
+/// Singleton site branding / promo settings (id is always "default")
+model SiteSettings {
+  id              String   @id @default("default")
+  companyName     String   @default("Social Velocityy")
+  companyUrl      String   @default("https://socialvelocityy.com")
+  companyDisplay  String   @default("Socialvelocityy.com")
+  whatsappNumber  String   @default("+923156679495")
+  promoPopupEnabled Boolean @default(true)
+  updatedAt       DateTime @updatedAt
+}

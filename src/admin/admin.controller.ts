@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AdminService } from './admin.service';
+import { SiteSettingsService } from '../site-settings/site-settings.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -19,7 +20,10 @@ import { APP_FEATURES } from '../common/features';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.ADMIN)
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(
+    private readonly adminService: AdminService,
+    private readonly siteSettings: SiteSettingsService,
+  ) {}
 
   @Get('stats')
   getStats() {
@@ -29,6 +33,25 @@ export class AdminController {
   @Get('features')
   listFeatures() {
     return { data: APP_FEATURES };
+  }
+
+  @Get('site-settings')
+  getSiteSettings() {
+    return this.siteSettings.getPublic();
+  }
+
+  @Patch('site-settings')
+  updateSiteSettings(
+    @Body()
+    body: {
+      companyName?: string;
+      companyUrl?: string;
+      companyDisplay?: string;
+      whatsappNumber?: string;
+      promoPopupEnabled?: boolean;
+    },
+  ) {
+    return this.siteSettings.update(body);
   }
 
   @Get('users')
