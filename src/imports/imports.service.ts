@@ -196,6 +196,7 @@ export class ImportsService {
           status: true,
           category: true,
           publishAt: true,
+          featuredImageUrl: true,
         },
       });
 
