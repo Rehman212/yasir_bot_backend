@@ -12,9 +12,9 @@ import { WordPressIntegrationService } from '../wordpress-integration/wordpress-
 import { MediaStatus } from '../common/enums';
 import { UploadFromUrlDto } from './dto/upload-from-url.dto';
 
-const MAX_LIBRARY_IMAGES = 500;
+const MAX_LIBRARY_IMAGES = 2000;
 const MAX_BYTES = 100 * 1024; // 100KB
-export const MAX_BATCH_UPLOAD = 100;
+export const MAX_BATCH_UPLOAD = 400;
 
 @Injectable()
 export class MediaService {
