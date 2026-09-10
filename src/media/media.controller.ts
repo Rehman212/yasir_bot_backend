@@ -69,6 +69,14 @@ export class MediaController {
     return this.mediaService.retry(userId, id);
   }
 
+  @Post('bulk-delete')
+  removeMany(
+    @CurrentUser('id') userId: string,
+    @Body('ids') ids: string[],
+  ) {
+    return this.mediaService.removeMany(userId, ids || []);
+  }
+
   @Delete(':id')
   remove(@CurrentUser('id') userId: string, @Param('id') id: string) {
     return this.mediaService.remove(userId, id);

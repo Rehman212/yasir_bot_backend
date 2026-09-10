@@ -12,8 +12,9 @@ import { WordPressIntegrationService } from '../wordpress-integration/wordpress-
 import { MediaStatus } from '../common/enums';
 import { UploadFromUrlDto } from './dto/upload-from-url.dto';
 
-const MAX_LIBRARY_IMAGES = 5;
+const MAX_LIBRARY_IMAGES = 50;
 const MAX_BYTES = 100 * 1024; // 100KB
+export const MAX_BATCH_UPLOAD = 10;
 
 @Injectable()
 export class MediaService {
@@ -256,6 +257,27 @@ export class MediaService {
     }
     await this.prisma.mediaAsset.delete({ where: { id } });
     return { data: { deleted: true } };
+  }
+
+  async removeMany(userId: string, ids: string[]) {
+    const unique = [...new Set((ids || []).filter(Boolean))];
+    if (!unique.length) {
+      throw new BadRequestException('No media ids provided');
+    }
+    let deleted = 0;
+    const errors: Array<{ id: string; message: string }> = [];
+    for (const id of unique) {
+      try {
+        await this.remove(userId, id);
+        deleted += 1;
+      } catch (err) {
+        errors.push({
+          id,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return { data: { deleted, failed: errors.length, errors } };
   }
 
   private assertWebpAndSize(
