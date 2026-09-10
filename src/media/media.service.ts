@@ -12,9 +12,9 @@ import { WordPressIntegrationService } from '../wordpress-integration/wordpress-
 import { MediaStatus } from '../common/enums';
 import { UploadFromUrlDto } from './dto/upload-from-url.dto';
 
-const MAX_LIBRARY_IMAGES = 50;
+const MAX_LIBRARY_IMAGES = 500;
 const MAX_BYTES = 100 * 1024; // 100KB
-export const MAX_BATCH_UPLOAD = 10;
+export const MAX_BATCH_UPLOAD = 100;
 
 @Injectable()
 export class MediaService {
@@ -245,16 +245,8 @@ export class MediaService {
   }
 
   async remove(userId: string, id: string) {
-    const asset = await this.getOwned(userId, id);
-    if (asset.wpMediaId) {
-      try {
-        await this.wp.deleteMedia(asset.siteId, asset.wpMediaId, userId);
-      } catch (err) {
-        this.logger.warn(
-          `WordPress media delete failed for ${id}: ${err?.message || err}`,
-        );
-      }
-    }
+    await this.getOwned(userId, id);
+    // Keep the file on WordPress — only remove the SheetPress library record.
     await this.prisma.mediaAsset.delete({ where: { id } });
     return { data: { deleted: true } };
   }
