@@ -1,4 +1,12 @@
-import { IsString, IsUrl, MinLength, MaxLength, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsUrl,
+  MinLength,
+  MaxLength,
+  IsOptional,
+  IsIn,
+  ValidateIf,
+} from 'class-validator';
 
 export class CreateSiteDto {
   @IsString()
@@ -6,14 +14,39 @@ export class CreateSiteDto {
   @MaxLength(120)
   name: string;
 
+  @IsOptional()
+  @IsIn(['WORDPRESS', 'SHOPIFY'])
+  platform?: 'WORDPRESS' | 'SHOPIFY';
+
+  // —— WordPress ——
+  @ValidateIf((o) => (o.platform || 'WORDPRESS') === 'WORDPRESS')
   @IsUrl({ require_protocol: true })
-  url: string;
+  url?: string;
 
+  @ValidateIf((o) => (o.platform || 'WORDPRESS') === 'WORDPRESS')
   @IsString()
   @MinLength(1)
-  username: string;
+  username?: string;
 
+  @ValidateIf((o) => (o.platform || 'WORDPRESS') === 'WORDPRESS')
   @IsString()
   @MinLength(1)
-  applicationPassword: string;
+  applicationPassword?: string;
+
+  // —— Shopify ——
+  /** my-store.myshopify.com or https://my-store.myshopify.com */
+  @ValidateIf((o) => o.platform === 'SHOPIFY')
+  @IsString()
+  @MinLength(3)
+  storeDomain?: string;
+
+  @ValidateIf((o) => o.platform === 'SHOPIFY')
+  @IsString()
+  @MinLength(8)
+  accessToken?: string;
+
+  /** Optional — defaults to first blog on the shop */
+  @IsOptional()
+  @IsString()
+  blogId?: string;
 }

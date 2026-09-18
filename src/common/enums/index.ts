@@ -15,6 +15,11 @@ export enum SiteStatus {
   DISCONNECTED = 'DISCONNECTED',
 }
 
+export enum SitePlatform {
+  WORDPRESS = 'WORDPRESS',
+  SHOPIFY = 'SHOPIFY',
+}
+
 export enum ArticleStatus {
   DRAFT = 'DRAFT',
   QUEUED = 'QUEUED',

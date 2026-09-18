@@ -61,7 +61,11 @@ export class PublishProcessor extends WorkerHost {
       return {
         success: true,
         articleId,
-        wpUrl: result.data?.wpUrl ?? (result as any).wp?.link,
+        wpUrl:
+          (result as any).wp?.link ??
+          (result as any).shopify?.link ??
+          (result as any).data?.wpUrl ??
+          null,
         removedFromDb: (result as any).removedFromDb === true,
       };
     } catch (err) {

@@ -25,6 +25,11 @@ enum SiteStatus {
   DISCONNECTED
 }
 
+enum SitePlatform {
+  WORDPRESS
+  SHOPIFY
+}
+
 enum ArticleStatus {
   DRAFT
   QUEUED
@@ -152,18 +157,28 @@ model PasswordResetToken {
 }
 
 model WordPressSite {
-  id               String     @id @default(cuid())
+  id               String       @id @default(cuid())
   userId           String
   name             String
   url              String
-  username         String
-  encryptedPassword String
-  status           SiteStatus @default(DISCONNECTED)
+  platform         SitePlatform @default(WORDPRESS)
+  /// WordPress login username (unused for Shopify)
+  username         String       @default("")
+  /// WordPress application password (unused for Shopify)
+  encryptedPassword String      @default("")
+  /// Shopify Admin API access token (encrypted)
+  encryptedAccessToken String?
+  /// e.g. my-store.myshopify.com
+  storeDomain      String?
+  /// Shopify Blog numeric id
+  blogId           String?
+  status           SiteStatus   @default(DISCONNECTED)
   lastConnectedAt  DateTime?
   wpInfo           Json?
-  publishedCount   Int        @default(0)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
+  shopInfo         Json?
+  publishedCount   Int          @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
 
   user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   importBatches ImportBatch[]
@@ -174,6 +189,7 @@ model WordPressSite {
   contentTemplates ContentTemplate[]
 
   @@index([userId])
+  @@index([platform])
 }
 
 model ImportBatch {
@@ -217,6 +233,8 @@ model Article {
   lsiKeywords      String?
   templateId       String?
   wpPostId         Int?
+  /// Remote id for non-WP platforms (e.g. Shopify article id as string)
+  externalPostId   String?
   wpUrl            String?
   publishAt        DateTime?
   duplicateOfId    String?

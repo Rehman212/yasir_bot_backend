@@ -1,4 +1,10 @@
-import { IsString, IsUrl, MinLength, MaxLength, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsUrl,
+  MinLength,
+  MaxLength,
+  IsOptional,
+} from 'class-validator';
 
 export class UpdateSiteDto {
   @IsOptional()
@@ -20,4 +26,18 @@ export class UpdateSiteDto {
   @IsString()
   @MinLength(1)
   applicationPassword?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  storeDomain?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(8)
+  accessToken?: string;
+
+  @IsOptional()
+  @IsString()
+  blogId?: string;
 }

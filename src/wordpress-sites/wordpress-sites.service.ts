@@ -8,9 +8,11 @@ import {
 import axios from 'axios';
 import { PrismaService } from '../prisma/prisma.service';
 import { EncryptionService } from '../common/crypto/encryption.service';
-import { SiteStatus } from '../common/enums';
+import { SitePlatform, SiteStatus } from '../common/enums';
 import { CreateSiteDto } from './dto/create-site.dto';
 import { UpdateSiteDto } from './dto/update-site.dto';
+
+const SHOPIFY_API_VERSION = '2024-10';
 
 @Injectable()
 export class WordPressSitesService {
@@ -22,11 +24,27 @@ export class WordPressSitesService {
   ) {}
 
   async create(userId: string, dto: CreateSiteDto) {
+    const platform =
+      dto.platform === 'SHOPIFY' ? SitePlatform.SHOPIFY : SitePlatform.WORDPRESS;
+
+    if (platform === SitePlatform.SHOPIFY) {
+      return this.createShopify(userId, dto);
+    }
+    return this.createWordPress(userId, dto);
+  }
+
+  private async createWordPress(userId: string, dto: CreateSiteDto) {
+    if (!dto.url || !dto.username || !dto.applicationPassword) {
+      throw new BadRequestException(
+        'WordPress requires url, username, and applicationPassword',
+      );
+    }
     const encryptedPassword = this.encryption.encrypt(dto.applicationPassword);
     const site = await this.prisma.wordPressSite.create({
       data: {
         userId,
         name: dto.name,
+        platform: SitePlatform.WORDPRESS,
         url: this.normalizeUrl(dto.url),
         username: dto.username,
         encryptedPassword,
@@ -36,7 +54,7 @@ export class WordPressSitesService {
     });
 
     try {
-      const info = await this.testConnectionInternal(site);
+      const info = await this.testWordPressInternal(site);
       const updated = await this.prisma.wordPressSite.update({
         where: { id: site.id },
         data: {
@@ -45,35 +63,86 @@ export class WordPressSitesService {
           wpInfo: info,
         },
       });
-      await this.prisma.auditLog.create({
+      await this.auditConnect(userId, site.id, site.name, site.url, true);
+      return { data: this.sanitize(updated), connected: true };
+    } catch (err) {
+      this.logger.warn(`WP site created but connection failed: ${err.message}`);
+      await this.auditConnect(
+        userId,
+        site.id,
+        site.name,
+        site.url,
+        false,
+        err.message,
+      );
+      return {
+        data: this.sanitize(site),
+        warning: err.message as string,
+        connected: false,
+      };
+    }
+  }
+
+  private async createShopify(userId: string, dto: CreateSiteDto) {
+    if (!dto.storeDomain || !dto.accessToken) {
+      throw new BadRequestException(
+        'Shopify requires storeDomain and accessToken',
+      );
+    }
+    const storeDomain = this.normalizeStoreDomain(dto.storeDomain);
+    const encryptedAccessToken = this.encryption.encrypt(dto.accessToken.trim());
+    const url = `https://${storeDomain}`;
+
+    const site = await this.prisma.wordPressSite.create({
+      data: {
+        userId,
+        name: dto.name,
+        platform: SitePlatform.SHOPIFY,
+        url,
+        storeDomain,
+        encryptedAccessToken,
+        blogId: dto.blogId?.trim() || null,
+        username: '',
+        encryptedPassword: '',
+        status: SiteStatus.DISCONNECTED,
+        publishedCount: 0,
+      },
+    });
+
+    try {
+      const info = await this.testShopifyInternal({
+        storeDomain,
+        encryptedAccessToken,
+        blogId: site.blogId,
+      });
+      const blogId = site.blogId || info.defaultBlogId || null;
+      const updated = await this.prisma.wordPressSite.update({
+        where: { id: site.id },
         data: {
-          userId,
-          action: 'CONNECT',
-          entity: 'WordPressSite',
-          entityId: site.id,
-          metadata: { name: site.name, url: site.url, connected: true },
+          status: SiteStatus.CONNECTED,
+          lastConnectedAt: new Date(),
+          shopInfo: info,
+          blogId,
         },
       });
+      await this.auditConnect(userId, site.id, site.name, url, true);
       return {
         data: this.sanitize(updated),
         connected: true,
+        blogs: info.blogs,
       };
     } catch (err) {
-      this.logger.warn(`Site created but connection failed: ${err.message}`);
-      await this.prisma.auditLog.create({
-        data: {
-          userId,
-          action: 'CONNECT',
-          entity: 'WordPressSite',
-          entityId: site.id,
-          metadata: {
-            name: site.name,
-            url: site.url,
-            connected: false,
-            error: err.message,
-          },
-        },
-      });
+      this.logger.warn(
+        `Shopify site created but connection failed: ${err.message}`,
+      );
+      await this.auditConnect(
+        userId,
+        site.id,
+        site.name,
+        url,
+        false,
+        err.message,
+      );
       return {
         data: this.sanitize(site),
         warning: err.message as string,
@@ -96,14 +165,32 @@ export class WordPressSitesService {
   }
 
   async update(userId: string, id: string, dto: UpdateSiteDto) {
-    await this.getOwnedSite(userId, id);
+    const existing = await this.getOwnedSite(userId, id);
     const data: Record<string, unknown> = {};
     if (dto.name !== undefined) data.name = dto.name;
-    if (dto.url !== undefined) data.url = this.normalizeUrl(dto.url);
-    if (dto.username !== undefined) data.username = dto.username;
-    if (dto.applicationPassword !== undefined) {
-      data.encryptedPassword = this.encryption.encrypt(dto.applicationPassword);
-      data.status = SiteStatus.NEEDS_RECONNECT;
+
+    if (existing.platform === SitePlatform.SHOPIFY) {
+      if (dto.storeDomain !== undefined) {
+        const storeDomain = this.normalizeStoreDomain(dto.storeDomain);
+        data.storeDomain = storeDomain;
+        data.url = `https://${storeDomain}`;
+      }
+      if (dto.accessToken !== undefined) {
+        data.encryptedAccessToken = this.encryption.encrypt(
+          dto.accessToken.trim(),
+        );
+        data.status = SiteStatus.NEEDS_RECONNECT;
+      }
+      if (dto.blogId !== undefined) data.blogId = dto.blogId;
+    } else {
+      if (dto.url !== undefined) data.url = this.normalizeUrl(dto.url);
+      if (dto.username !== undefined) data.username = dto.username;
+      if (dto.applicationPassword !== undefined) {
+        data.encryptedPassword = this.encryption.encrypt(
+          dto.applicationPassword,
+        );
+        data.status = SiteStatus.NEEDS_RECONNECT;
+      }
     }
 
     const site = await this.prisma.wordPressSite.update({
@@ -122,7 +209,33 @@ export class WordPressSitesService {
   async testConnection(userId: string, id: string) {
     const site = await this.getOwnedSite(userId, id);
     try {
-      const info = await this.testConnectionInternal(site);
+      if (site.platform === SitePlatform.SHOPIFY) {
+        const info = await this.testShopifyInternal({
+          storeDomain: site.storeDomain || this.normalizeStoreDomain(site.url),
+          encryptedAccessToken: site.encryptedAccessToken || '',
+          blogId: site.blogId,
+        });
+        const blogId = site.blogId || info.defaultBlogId || null;
+        const updated = await this.prisma.wordPressSite.update({
+          where: { id },
+          data: {
+            status: SiteStatus.CONNECTED,
+            lastConnectedAt: new Date(),
+            shopInfo: info,
+            blogId,
+          },
+        });
+        return {
+          data: {
+            connected: true,
+            site: this.sanitize(updated),
+            info,
+            blogs: info.blogs,
+          },
+        };
+      }
+
+      const info = await this.testWordPressInternal(site);
       const updated = await this.prisma.wordPressSite.update({
         where: { id },
         data: {
@@ -138,19 +251,13 @@ export class WordPressSitesService {
         data: { status: SiteStatus.NEEDS_RECONNECT },
       });
       throw new BadRequestException(
-        `WordPress connection failed: ${err.message}`,
+        `${site.platform === SitePlatform.SHOPIFY ? 'Shopify' : 'WordPress'} connection failed: ${err.message}`,
       );
     }
   }
 
   async fetchWpInfo(userId: string, id: string) {
-    const site = await this.getOwnedSite(userId, id);
-    const info = await this.testConnectionInternal(site);
-    const updated = await this.prisma.wordPressSite.update({
-      where: { id },
-      data: { wpInfo: info, lastConnectedAt: new Date() },
-    });
-    return { data: { info, site: this.sanitize(updated) } };
+    return this.testConnection(userId, id);
   }
 
   async getDecryptedCredentials(siteId: string, userId?: string) {
@@ -161,6 +268,11 @@ export class WordPressSitesService {
     if (userId && site.userId !== userId) {
       throw new ForbiddenException('Access denied');
     }
+    if (site.platform === SitePlatform.SHOPIFY) {
+      throw new BadRequestException(
+        'This site is Shopify — use getShopifyCredentials',
+      );
+    }
     return {
       site,
       username: site.username,
@@ -169,7 +281,31 @@ export class WordPressSitesService {
     };
   }
 
-  private async testConnectionInternal(site: {
+  async getShopifyCredentials(siteId: string, userId?: string) {
+    const site = await this.prisma.wordPressSite.findUnique({
+      where: { id: siteId },
+    });
+    if (!site) throw new NotFoundException('Site not found');
+    if (userId && site.userId !== userId) {
+      throw new ForbiddenException('Access denied');
+    }
+    if (site.platform !== SitePlatform.SHOPIFY) {
+      throw new BadRequestException('This site is not a Shopify connection');
+    }
+    if (!site.encryptedAccessToken) {
+      throw new BadRequestException('Shopify access token missing');
+    }
+    const storeDomain =
+      site.storeDomain || this.normalizeStoreDomain(site.url);
+    return {
+      site,
+      storeDomain,
+      accessToken: this.encryption.decrypt(site.encryptedAccessToken),
+      blogId: site.blogId,
+    };
+  }
+
+  private async testWordPressInternal(site: {
     url: string;
     username: string;
     encryptedPassword: string;
@@ -198,6 +334,97 @@ export class WordPressSitesService {
     };
   }
 
+  private async testShopifyInternal(site: {
+    storeDomain: string;
+    encryptedAccessToken: string;
+    blogId?: string | null;
+  }) {
+    if (!site.encryptedAccessToken) {
+      throw new Error('Missing Shopify Admin API access token');
+    }
+    const token = this.encryption.decrypt(site.encryptedAccessToken);
+    const domain = this.normalizeStoreDomain(site.storeDomain);
+    const headers = {
+      'X-Shopify-Access-Token': token,
+      'Content-Type': 'application/json',
+    };
+    const base = `https://${domain}/admin/api/${SHOPIFY_API_VERSION}`;
+
+    const shopRes = await axios.get(`${base}/shop.json`, {
+      headers,
+      timeout: 15000,
+      validateStatus: (s) => s < 500,
+    });
+    if (shopRes.status === 401 || shopRes.status === 403) {
+      throw new Error(
+        'Invalid Shopify token. Create a custom app → Admin API access token with read_content, write_content (and read_products if needed).',
+      );
+    }
+    if (shopRes.status >= 400) {
+      throw new Error(`Shopify returned status ${shopRes.status}`);
+    }
+
+    const blogsRes = await axios.get(`${base}/blogs.json`, {
+      headers,
+      timeout: 15000,
+      validateStatus: (s) => s < 500,
+    });
+    if (blogsRes.status >= 400) {
+      throw new Error(
+        `Could not list blogs (status ${blogsRes.status}). Ensure the app has read_content / write_content scopes.`,
+      );
+    }
+
+    const blogs = (blogsRes.data?.blogs || []).map(
+      (b: { id: number; title: string; handle: string }) => ({
+        id: String(b.id),
+        title: b.title,
+        handle: b.handle,
+      }),
+    );
+
+    if (!blogs.length) {
+      throw new Error(
+        'No blogs found on this Shopify store. Create a blog in Shopify Admin → Online Store → Blog posts.',
+      );
+    }
+
+    let defaultBlogId = site.blogId || null;
+    if (defaultBlogId && !blogs.some((b) => b.id === defaultBlogId)) {
+      throw new Error(
+        `Blog ID ${defaultBlogId} not found on this shop. Available: ${blogs.map((b) => `${b.title} (${b.id})`).join(', ')}`,
+      );
+    }
+    if (!defaultBlogId) defaultBlogId = blogs[0].id;
+
+    return {
+      shopName: shopRes.data?.shop?.name,
+      shopDomain: shopRes.data?.shop?.myshopify_domain || domain,
+      blogs,
+      defaultBlogId,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  private async auditConnect(
+    userId: string,
+    entityId: string,
+    name: string,
+    url: string,
+    connected: boolean,
+    error?: string,
+  ) {
+    await this.prisma.auditLog.create({
+      data: {
+        userId,
+        action: 'CONNECT',
+        entity: 'WordPressSite',
+        entityId,
+        metadata: { name, url, connected, ...(error ? { error } : {}) },
+      },
+    });
+  }
+
   private async getOwnedSite(userId: string, id: string) {
     const site = await this.prisma.wordPressSite.findUnique({ where: { id } });
     if (!site) throw new NotFoundException('Site not found');
@@ -209,8 +436,24 @@ export class WordPressSitesService {
     return url.replace(/\/+$/, '');
   }
 
+  /** Accepts my-store.myshopify.com or full https URL */
+  normalizeStoreDomain(input: string) {
+    let v = input.trim().toLowerCase();
+    v = v.replace(/^https?:\/\//, '');
+    v = v.split('/')[0];
+    v = v.replace(/\/+$/, '');
+    if (!v.includes('.')) {
+      v = `${v}.myshopify.com`;
+    }
+    return v;
+  }
+
   private sanitize(site: Record<string, any>) {
-    const { encryptedPassword: _, ...rest } = site;
+    const {
+      encryptedPassword: _p,
+      encryptedAccessToken: _t,
+      ...rest
+    } = site;
     return rest;
   }
 }

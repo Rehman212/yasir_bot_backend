@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { WordPressSitesModule } from './wordpress-sites/wordpress-sites.module';
 import { WordPressIntegrationModule } from './wordpress-integration/wordpress-integration.module';
+import { ShopifyIntegrationModule } from './shopify-integration/shopify-integration.module';
 import { ImportsModule } from './imports/imports.module';
 import { ArticlesModule } from './articles/articles.module';
 import { MediaModule } from './media/media.module';
@@ -35,6 +36,7 @@ import { CommonModule } from './common/common.module';
     UsersModule,
     WordPressSitesModule,
     WordPressIntegrationModule,
+    ShopifyIntegrationModule,
     ImportsModule,
     ArticlesModule,
     MediaModule,
