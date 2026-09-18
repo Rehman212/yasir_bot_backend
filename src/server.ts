@@ -19,10 +19,18 @@ function corsOrigin(
     process.env.FRONTEND_URL,
     'http://localhost:3000',
     'http://localhost:3001',
+    'http://localhost:3002',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+    'http://127.0.0.1:3002',
   ].filter(Boolean) as string[];
+
+  const isLocalDev =
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 
   if (
     allowed.includes(origin) ||
+    isLocalDev ||
     origin.endsWith('.vercel.app') ||
     origin.endsWith('.vercel.app/')
   ) {

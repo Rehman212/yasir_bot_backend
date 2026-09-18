@@ -4,26 +4,35 @@ import {
   NotFoundException,
   ForbiddenException,
   OnModuleInit,
+  OnModuleDestroy,
+  Inject,
+  forwardRef,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { PublishingService } from '../publishing/publishing.service';
 import { ArticleStatus, JobStatus } from '../common/enums';
-import { EnqueueArticlesDto } from './dto/queue.dto';
+import { EnqueueArticlesDto, EnqueueByTitlesDto } from './dto/queue.dto';
 
 export const PUBLISH_QUEUE = 'publish';
 
 @Injectable()
-export class QueueService implements OnModuleInit {
+export class QueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(QueueService.name);
   private redisAvailable = true;
   private defaultDelayMs = 2000;
+  private duePoller: ReturnType<typeof setInterval> | null = null;
+  private processingDue = false;
 
   constructor(
     @InjectQueue(PUBLISH_QUEUE) private readonly publishQueue: Queue,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    @Inject(forwardRef(() => PublishingService))
+    private readonly publishing: PublishingService,
   ) {}
 
   async onModuleInit() {
@@ -36,15 +45,30 @@ export class QueueService implements OnModuleInit {
     } catch (err) {
       this.redisAvailable = false;
       this.logger.warn(
-        `Redis unavailable — queue API will log warnings: ${err.message}`,
+        `Redis unavailable — using DB poller for scheduled jobs: ${err.message}`,
       );
     }
+
+    // Always poll due jobs so schedules work without Redis / after restarts
+    this.duePoller = setInterval(() => {
+      void this.processDueJobs();
+    }, 20_000);
+  }
+
+  onModuleDestroy() {
+    if (this.duePoller) clearInterval(this.duePoller);
   }
 
   async enqueue(userId: string, dto: EnqueueArticlesDto) {
     const jobs: Array<Record<string, unknown>> = [];
     let delayOffset = 0;
     const perJobDelay = dto.delayMs ?? this.defaultDelayMs;
+    const intervalMs = (dto.intervalMinutes ?? 0) * 60 * 1000;
+    const baseScheduled = dto.scheduledAt ? new Date(dto.scheduledAt) : null;
+    let scheduleCursor =
+      baseScheduled && !isNaN(baseScheduled.getTime())
+        ? new Date(baseScheduled)
+        : null;
 
     for (const articleId of dto.articleIds) {
       const article = await this.prisma.article.findUnique({
@@ -55,20 +79,24 @@ export class QueueService implements OnModuleInit {
         continue;
       }
 
-      const scheduledAt = dto.scheduledAt
-        ? new Date(dto.scheduledAt)
-        : null;
+      const scheduledAt = scheduleCursor
+        ? new Date(scheduleCursor)
+        : dto.scheduledAt
+          ? new Date(dto.scheduledAt)
+          : null;
       const delay =
         scheduledAt && scheduledAt > new Date()
           ? scheduledAt.getTime() - Date.now()
           : delayOffset;
+
+      const isScheduled = !!(scheduledAt && scheduledAt > new Date());
 
       const publishJob = await this.prisma.publishJob.create({
         data: {
           articleId,
           siteId: article.siteId,
           userId,
-          status: delay > 0 ? JobStatus.DELAYED : JobStatus.WAITING,
+          status: isScheduled ? JobStatus.DELAYED : JobStatus.WAITING,
           scheduledAt: scheduledAt || new Date(Date.now() + delay),
           attempts: 0,
           maxAttempts: 3,
@@ -80,7 +108,7 @@ export class QueueService implements OnModuleInit {
       try {
         if (!this.redisAvailable) {
           this.logger.warn(
-            `Redis down — job ${publishJob.id} stored in DB only`,
+            `Redis down — job ${publishJob.id} stored in DB (poller will run it)`,
           );
         } else {
           const bullJob = await this.publishQueue.add(
@@ -109,30 +137,165 @@ export class QueueService implements OnModuleInit {
         await this.prisma.article.update({
           where: { id: articleId },
           data: {
-            status: scheduledAt
+            status: isScheduled
               ? ArticleStatus.SCHEDULED
               : ArticleStatus.QUEUED,
+            ...(scheduledAt ? { publishAt: scheduledAt } : {}),
           },
         });
 
-        jobs.push({ articleId, jobId: publishJob.id, delay });
+        jobs.push({
+          articleId,
+          jobId: publishJob.id,
+          delay,
+          status: isScheduled ? 'SCHEDULED' : 'QUEUED',
+          scheduledAt: publishJob.scheduledAt,
+        });
       } catch (err) {
         this.redisAvailable = false;
         this.logger.warn(`Failed to enqueue bull job: ${err.message}`);
-        jobs.push({ articleId, jobId: publishJob.id, warning: err.message });
+
+        await this.prisma.article.update({
+          where: { id: articleId },
+          data: {
+            status: isScheduled
+              ? ArticleStatus.SCHEDULED
+              : ArticleStatus.QUEUED,
+            ...(scheduledAt ? { publishAt: scheduledAt } : {}),
+          },
+        });
+
+        jobs.push({
+          articleId,
+          jobId: publishJob.id,
+          warning: err.message,
+          status: isScheduled ? 'SCHEDULED' : 'QUEUED',
+          scheduledAt: publishJob.scheduledAt,
+        });
       }
 
       delayOffset += perJobDelay;
+      if (scheduleCursor) {
+        scheduleCursor = new Date(scheduleCursor.getTime() + intervalMs);
+      }
     }
 
     return { data: { jobs, delayMs: perJobDelay } };
+  }
+
+  async enqueueByTitles(userId: string, dto: EnqueueByTitlesDto) {
+    const site = await this.prisma.wordPressSite.findFirst({
+      where: { id: dto.siteId, userId },
+    });
+    if (!site) throw new NotFoundException('Website not found');
+
+    const startAt = new Date(dto.scheduledAt);
+    if (isNaN(startAt.getTime())) {
+      throw new BadRequestException('Invalid scheduledAt date');
+    }
+
+    const titles = [
+      ...new Set(
+        dto.titles
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0),
+      ),
+    ];
+    if (titles.length === 0) {
+      throw new BadRequestException('Paste at least one article title');
+    }
+
+    const createMissing = dto.createMissing !== false;
+    const intervalMs = (dto.intervalMinutes ?? 0) * 60 * 1000;
+    const timezone = dto.timezone || 'UTC';
+
+    const resolved: Array<{
+      title: string;
+      articleId?: string;
+      created?: boolean;
+      error?: string;
+    }> = [];
+    const articleIds: string[] = [];
+    const scheduleTimes: Date[] = [];
+    let cursor = new Date(startAt);
+
+    for (const title of titles) {
+      let article = await this.prisma.article.findFirst({
+        where: {
+          userId,
+          siteId: dto.siteId,
+          title: { equals: title, mode: 'insensitive' },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+
+      if (!article && createMissing) {
+        article = await this.prisma.article.create({
+          data: {
+            userId,
+            siteId: dto.siteId,
+            title,
+            content:
+              '<p>Draft created from Publishing Queue — add content before it goes live.</p>',
+            status: ArticleStatus.DRAFT,
+          },
+        });
+        resolved.push({ title, articleId: article.id, created: true });
+      } else if (!article) {
+        resolved.push({ title, error: 'Article not found on this website' });
+        continue;
+      } else {
+        resolved.push({ title, articleId: article.id, created: false });
+      }
+
+      articleIds.push(article.id);
+      scheduleTimes.push(new Date(cursor));
+      cursor = new Date(cursor.getTime() + intervalMs);
+    }
+
+    const jobs: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < articleIds.length; i++) {
+      const enqueued = await this.enqueue(userId, {
+        articleIds: [articleIds[i]],
+        scheduledAt: scheduleTimes[i].toISOString(),
+        timezone,
+      });
+      jobs.push(...enqueued.data.jobs);
+    }
+
+    return {
+      data: {
+        siteId: dto.siteId,
+        siteName: site.name,
+        scheduledAt: startAt.toISOString(),
+        timezone,
+        intervalMinutes: dto.intervalMinutes ?? 0,
+        resolved,
+        jobs,
+      },
+    };
   }
 
   async list(userId: string) {
     const jobs = await this.prisma.publishJob.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
-      take: 100,
+      take: 150,
+      include: {
+        article: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            publishAt: true,
+            wpUrl: true,
+            errorMessage: true,
+          },
+        },
+        site: {
+          select: { id: true, name: true, url: true },
+        },
+      },
     });
     return { data: jobs };
   }
@@ -190,7 +353,12 @@ export class QueueService implements OnModuleInit {
 
     const updated = await this.prisma.publishJob.update({
       where: { id: jobId },
-      data: { status: JobStatus.WAITING },
+      data: {
+        status:
+          job.scheduledAt && job.scheduledAt > new Date()
+            ? JobStatus.DELAYED
+            : JobStatus.WAITING,
+      },
     });
     return { data: updated };
   }
@@ -225,6 +393,38 @@ export class QueueService implements OnModuleInit {
     return { data: updated };
   }
 
+  /** Cancel all active/scheduled jobs for this user in one go. */
+  async cancelAll(userId: string) {
+    const jobs = await this.prisma.publishJob.findMany({
+      where: {
+        userId,
+        status: {
+          in: [
+            JobStatus.WAITING,
+            JobStatus.DELAYED,
+            JobStatus.PAUSED,
+            JobStatus.ACTIVE,
+          ],
+        },
+      },
+      select: { id: true },
+    });
+
+    let cancelled = 0;
+    for (const job of jobs) {
+      try {
+        await this.cancel(userId, job.id);
+        cancelled += 1;
+      } catch (err) {
+        this.logger.warn(
+          `cancelAll skipped ${job.id}: ${(err as Error).message}`,
+        );
+      }
+    }
+
+    return { data: { cancelled, total: jobs.length } };
+  }
+
   async pauseQueue() {
     try {
       await this.publishQueue.pause();
@@ -252,6 +452,76 @@ export class QueueService implements OnModuleInit {
 
   getSpeed() {
     return { data: { delayMs: this.defaultDelayMs } };
+  }
+
+  /** Runs due WAITING/DELAYED jobs from DB (works without Redis). */
+  async processDueJobs() {
+    if (this.processingDue) return;
+    this.processingDue = true;
+    try {
+      const now = new Date();
+      const due = await this.prisma.publishJob.findMany({
+        where: {
+          status: { in: [JobStatus.WAITING, JobStatus.DELAYED] },
+          OR: [{ scheduledAt: null }, { scheduledAt: { lte: now } }],
+        },
+        orderBy: { scheduledAt: 'asc' },
+        take: 5,
+      });
+
+      for (const job of due) {
+        // If BullMQ owns this job, skip — worker will handle it
+        if (this.redisAvailable && job.bullJobId) continue;
+
+        await this.prisma.publishJob.update({
+          where: { id: job.id },
+          data: {
+            status: JobStatus.ACTIVE,
+            attempts: { increment: 1 },
+            progress: 10,
+          },
+        });
+
+        try {
+          await this.publishing.publish(job.userId, job.articleId);
+          try {
+            await this.prisma.publishJob.update({
+              where: { id: job.id },
+              data: {
+                status: JobStatus.COMPLETED,
+                progress: 100,
+                error: null,
+              },
+            });
+          } catch {
+            /* job/article may be removed after publish */
+          }
+        } catch (err) {
+          this.logger.error(
+            `Due job ${job.id} failed: ${(err as Error).message}`,
+          );
+          await this.prisma.publishJob.update({
+            where: { id: job.id },
+            data: {
+              status: JobStatus.FAILED,
+              error: (err as Error).message,
+              progress: 0,
+            },
+          });
+          await this.prisma.article.update({
+            where: { id: job.articleId },
+            data: {
+              status: ArticleStatus.FAILED,
+              errorMessage: (err as Error).message,
+            },
+          });
+        }
+      }
+    } catch (err) {
+      this.logger.warn(`processDueJobs: ${(err as Error).message}`);
+    } finally {
+      this.processingDue = false;
+    }
   }
 
   private async getOwnedJob(userId: string, id: string) {

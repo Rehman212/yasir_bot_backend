@@ -10,7 +10,11 @@ import { QueueService } from './queue.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { FeaturesGuard } from '../common/guards/features.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { EnqueueArticlesDto, SpeedControlDto } from './dto/queue.dto';
+import {
+  EnqueueArticlesDto,
+  EnqueueByTitlesDto,
+  SpeedControlDto,
+} from './dto/queue.dto';
 
 @Controller('queue')
 @UseGuards(JwtAuthGuard, FeaturesGuard)
@@ -23,6 +27,14 @@ export class QueueController {
     @Body() dto: EnqueueArticlesDto,
   ) {
     return this.queueService.enqueue(userId, dto);
+  }
+
+  @Post('enqueue-by-titles')
+  enqueueByTitles(
+    @CurrentUser('id') userId: string,
+    @Body() dto: EnqueueByTitlesDto,
+  ) {
+    return this.queueService.enqueueByTitles(userId, dto);
   }
 
   @Get()
@@ -48,6 +60,11 @@ export class QueueController {
   @Post('resume-all')
   resumeQueue() {
     return this.queueService.resumeQueue();
+  }
+
+  @Post('cancel-all')
+  cancelAll(@CurrentUser('id') userId: string) {
+    return this.queueService.cancelAll(userId);
   }
 
   @Get(':id/progress')
