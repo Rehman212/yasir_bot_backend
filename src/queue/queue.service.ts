@@ -36,17 +36,40 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    try {
-      const client = await (this.publishQueue as any).client;
-      if (client?.status === 'ready' || client?.ping) {
-        await client.ping?.();
-      }
-      this.logger.log('BullMQ publish queue connected');
-    } catch (err) {
+    const redisEnabled =
+      process.env.REDIS_ENABLED === 'true' && !process.env.VERCEL;
+
+    if (!redisEnabled) {
       this.redisAvailable = false;
       this.logger.warn(
-        `Redis unavailable — using DB poller for scheduled jobs: ${err.message}`,
+        'REDIS_ENABLED=false — using DB poller for scheduled jobs',
       );
+    } else {
+      try {
+        const clientPromise = Promise.resolve(
+          (this.publishQueue as any)?.client,
+        );
+        const client = await Promise.race([
+          clientPromise,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Redis client timeout')), 3000),
+          ),
+        ]);
+        if (client && typeof (client as any).ping === 'function') {
+          await Promise.race([
+            (client as any).ping(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Redis ping timeout')), 3000),
+            ),
+          ]);
+        }
+        this.logger.log('BullMQ publish queue connected');
+      } catch (err) {
+        this.redisAvailable = false;
+        this.logger.warn(
+          `Redis unavailable — using DB poller for scheduled jobs: ${(err as Error).message}`,
+        );
+      }
     }
 
     // Always poll due jobs so schedules work without Redis / after restarts
