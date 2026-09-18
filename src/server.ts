@@ -69,6 +69,7 @@ export async function createExpressApp(): Promise<Express> {
   });
 
   await app.init();
+  console.log('Nest app.init() complete');
   cachedExpressApp = server;
   return server;
 }

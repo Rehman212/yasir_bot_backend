@@ -24,7 +24,12 @@ export class AdminService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    await this.ensureBootstrapAdmin();
+    // Defer so API can listen even if bootstrap is slow
+    setImmediate(() => {
+      void this.ensureBootstrapAdmin().catch((err) =>
+        this.logger.error(`Bootstrap admin failed: ${err.message}`),
+      );
+    });
   }
 
   /** Creates / promotes the configured bootstrap admin if missing. */

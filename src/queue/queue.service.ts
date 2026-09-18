@@ -5,10 +5,9 @@ import {
   ForbiddenException,
   OnModuleInit,
   OnModuleDestroy,
-  Inject,
-  forwardRef,
   BadRequestException,
 } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
@@ -31,11 +30,17 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     @InjectQueue(PUBLISH_QUEUE) private readonly publishQueue: Queue,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject(forwardRef(() => PublishingService))
-    private readonly publishing: PublishingService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   async onModuleInit() {
+    // Never block Nest listen() — queue bootstrap runs after boot.
+    setImmediate(() => {
+      void this.bootstrapQueue();
+    });
+  }
+
+  private async bootstrapQueue() {
     const redisEnabled =
       process.env.REDIS_ENABLED === 'true' && !process.env.VERCEL;
 
@@ -72,10 +77,14 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // Always poll due jobs so schedules work without Redis / after restarts
     this.duePoller = setInterval(() => {
       void this.processDueJobs();
     }, 20_000);
+    this.logger.log('Queue due-job poller started');
+  }
+
+  private publishing(): PublishingService {
+    return this.moduleRef.get(PublishingService, { strict: false });
   }
 
   onModuleDestroy() {
@@ -506,7 +515,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         });
 
         try {
-          await this.publishing.publish(job.userId, job.articleId);
+          await this.publishing().publish(job.userId, job.articleId);
           try {
             await this.prisma.publishJob.update({
               where: { id: job.id },
