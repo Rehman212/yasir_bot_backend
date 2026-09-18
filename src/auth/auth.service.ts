@@ -36,6 +36,14 @@ export class AuthService {
     if (!user || !user.passwordHash) return null;
     if (user.status !== UserStatus.ACTIVE) return null;
 
+    if (user.expiresAt && user.expiresAt.getTime() <= Date.now()) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { status: UserStatus.SUSPENDED },
+      });
+      return null;
+    }
+
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) return null;
 

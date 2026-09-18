@@ -105,6 +105,8 @@ model User {
   preferences     Json?
   /// Feature keys the user cannot access (e.g. media, import). Admins ignore this.
   deniedFeatures  String[]  @default([])
+  /// When set, account access ends after this time (admin-assigned trial / seat).
+  expiresAt       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

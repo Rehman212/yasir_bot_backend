@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -13,6 +14,7 @@ import { SiteSettingsService } from '../site-settings/site-settings.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { PlanType, UserRole, UserStatus } from '../common/enums';
 import { APP_FEATURES } from '../common/features';
 
@@ -68,9 +70,15 @@ export class AdminController {
       password: string;
       role?: UserRole;
       deniedFeatures?: string[];
+      expiryDays?: number | null;
     },
   ) {
     return this.adminService.createUser(body);
+  }
+
+  @Delete('users/:id')
+  deleteUser(@Param('id') id: string, @CurrentUser('id') actorId: string) {
+    return this.adminService.deleteUser(id, actorId);
   }
 
   @Patch('users/:id/status')

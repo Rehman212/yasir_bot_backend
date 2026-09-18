@@ -33,6 +33,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new UnauthorizedException('User not found or inactive');
     }
 
+    if (user.expiresAt && user.expiresAt.getTime() <= Date.now()) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { status: UserStatus.SUSPENDED },
+      });
+      throw new UnauthorizedException('Account expired');
+    }
+
     return {
       id: user.id,
       email: user.email,

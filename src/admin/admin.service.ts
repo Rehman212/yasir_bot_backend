@@ -127,8 +127,10 @@ export class AdminService implements OnModuleInit {
 
   async listUsers(page = 1, limit = 20) {
     const skip = (page - 1) * limit;
+    const where = { status: { not: UserStatus.DELETED } };
     const [items, total] = await Promise.all([
       this.prisma.user.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
@@ -139,6 +141,7 @@ export class AdminService implements OnModuleInit {
           role: true,
           status: true,
           deniedFeatures: true,
+          expiresAt: true,
           createdAt: true,
           subscription: {
             select: { plan: true, status: true, articlesUsed: true },
@@ -146,9 +149,20 @@ export class AdminService implements OnModuleInit {
           _count: { select: { sites: true, articles: true } },
         },
       }),
-      this.prisma.user.count(),
+      this.prisma.user.count({ where }),
     ]);
     return { data: items, meta: { total, page, limit } };
+  }
+
+  private resolveExpiresAt(expiryDays?: number | null): Date | null {
+    if (expiryDays === undefined || expiryDays === null) return null;
+    const days = Number(expiryDays);
+    if (!Number.isFinite(days) || days < 1 || days > 3650) {
+      throw new BadRequestException(
+        'expiryDays must be between 1 and 3650, or omitted for no expiry',
+      );
+    }
+    return new Date(Date.now() + Math.floor(days) * 24 * 60 * 60 * 1000);
   }
 
   async createUser(input: {
@@ -157,6 +171,7 @@ export class AdminService implements OnModuleInit {
     password: string;
     role?: UserRole;
     deniedFeatures?: string[];
+    expiryDays?: number | null;
   }) {
     const email = input.email.toLowerCase().trim();
     if (!email || !input.name?.trim() || !input.password) {
@@ -172,6 +187,7 @@ export class AdminService implements OnModuleInit {
     const deniedFeatures = this.normalizeDenied(input.deniedFeatures);
     const role = input.role === UserRole.ADMIN ? UserRole.ADMIN : UserRole.USER;
     const passwordHash = await bcrypt.hash(input.password, 12);
+    const expiresAt = this.resolveExpiresAt(input.expiryDays);
 
     const user = await this.prisma.user.create({
       data: {
@@ -182,6 +198,7 @@ export class AdminService implements OnModuleInit {
         status: UserStatus.ACTIVE,
         emailVerifiedAt: new Date(),
         deniedFeatures: role === UserRole.ADMIN ? [] : deniedFeatures,
+        expiresAt,
         preferences: {},
         subscription: {
           create: {
@@ -202,11 +219,46 @@ export class AdminService implements OnModuleInit {
         role: true,
         status: true,
         deniedFeatures: true,
+        expiresAt: true,
         createdAt: true,
       },
     });
 
     return { data: user };
+  }
+
+  async deleteUser(userId: string, actorId: string) {
+    if (userId === actorId) {
+      throw new BadRequestException('You cannot delete your own account');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || user.status === UserStatus.DELETED) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      const adminCount = await this.prisma.user.count({
+        where: { role: UserRole.ADMIN, status: UserStatus.ACTIVE },
+      });
+      if (adminCount <= 1) {
+        throw new BadRequestException('Cannot delete the last admin');
+      }
+    }
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: UserStatus.DELETED,
+        email: `deleted_${userId}@deleted.local`,
+        passwordHash: null,
+        googleId: null,
+        expiresAt: null,
+      },
+    });
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
+
+    return { data: { deleted: true } };
   }
 
   async updateUserRole(userId: string, role: UserRole) {
